@@ -1,25 +1,47 @@
-# 원 규칙에 대한 적대적 리뷰 기록
+# Adversarial review of the source rules
 
-SKILL.md의 규칙 1~4를 저작 시점(2026-09-21)에 비판적으로 검토한 기록이다. 모든 항목은 스킬 저자의 추론이며 원 출처(저작 요청에 제공된 시스템 프롬프트; 미상의 영상 요약)의 승인을 받지 않았다. 파이프라인 설계 시 사용자 결정이 필요한 항목을 고를 때, 또는 원 규칙이 현장에 맞지 않는 이유를 설명할 때 읽는다.
+Record of the critical review of Rules 1–4 in SKILL.md at authoring time (2026-09-21). Every item is the skill author's inference and has not been approved by the source (the system prompt supplied in the authoring request, which summarizes an unidentified video). Read this when choosing which items need a user decision during pipeline design, or when explaining why a source rule may not fit the current setting.
 
-판정 기준: **유지** = 원 규칙을 기본값으로 둠, **조건부** = 특정 조건에서만 원 규칙 적용, **상충** = 저자 관점과 원 규칙이 반대이며 해소되지 않음.
+Verdicts: **keep** = source rule stays the default; **conditional** = source rule applies only under the stated condition; **conflict** = the author's view is the opposite of the source rule and the conflict is unresolved.
 
-| # | 원 규칙 | 공격 | 판정 | 결정에 필요한 증거 |
+| # | Source rule | Attack | Verdict | Evidence that would settle it |
 |---|---|---|---|---|
-| 1a | 200자 분할 | "한 가지 맥락"과 고정 글자 수는 다른 기준. 문장 중간 절단 가능. | 유지(문장 경계 정렬은 선택지로 제시) | 문장 경계 정렬 유무별 검색 정확도 비교 |
-| 1b | 200자 분할 | 표·코드·목록은 200자에 의미 단위가 안 들어감. | 조건부(산문 문서에 적용) | 문서 종류 확인 |
-| 1c | 60자 겹침 | 30% 중복은 색인·임베딩 비용 증가. 근거 미제시. | 유지 | 겹침 0/30/60에서 경계 질문 정확도 비교 |
-| 1d | "자" 단위 | 문자/토큰 미정의. | 저자 결정: 문자 수 | 원 출처 확인 |
-| 2a | 키워드 검색으로 오탐 방지 | 한국어 조사 때문에 공백 토큰화로는 "성수점은"≠"성수점". | 조건부(형태소 분석 또는 n-gram 있을 때) | 검색 엔진 토크나이저 확인 |
-| 2b | 두 결과 종합 | 결합 방식(RRF/가중합/필터) 미정의. 가중치가 나쁘면 한쪽이 지배. | 유지(방식 기록 요구) | 결합 방식별 평가 |
-| 2c | 지점명 혼동 방지 | 지점명은 메타데이터 필터가 더 확실. | 제안(원 규칙 외) | 메타데이터 존재 여부 |
-| 3a | Top-20 | 컨텍스트 4배, lost-in-the-middle 위험(Liu et al., 2023). | 유지(예산 초과 시 SKILL.md 규칙 3 실행의 저자 결정 적용) | LLM 컨텍스트 한도, 위치별 활용도 |
-| 3b | 집계형 질문에 충분한 수 확보 | 검색으로는 완전성 보장 불가. k를 늘려도 "전부"인지 모름. | 유지 + 범위 한정 문구 필수(저자 결정); 구조화 조회는 제안 | 구조화 데이터 유무 |
-| 4a | Top-20 확보 시 리랭커 생략 | 실무 통례는 반대: 넓게 검색 → 리랭커 → 소수 전달. 후보가 많을수록 리랭커 가치 상승. 원 규칙은 검색 후보 수와 LLM 전달 수를 구분하지 않음. | **상충** | 리랭커 유무별 답변 품질 비교(같은 k) |
-| 4b | Top-5 이하 시 리랭커 필수 | 동의. 단 리랭커 입력 후보가 5개뿐이면 재정렬 효과가 작음 — 1차 후보는 더 넓게 뽑아야 함. | 유지(1차 후보 ≥ 20 권장) | — |
-| 4c | 6~19 구간 | 원 규칙 미정의. | 저자 제안: 리랭커 사용 기본, 사용자 확인 대상으로 표시 | 사용자 결정 |
-| 4d | "확보/추출" 수의 의미 | 1차 후보 수인지 LLM 전달 수인지 미정의. 1차 후보 수로 읽으면 4b 구성(후보 20, 전달 5)에서 "생략"과 "필수"가 동시에 발동. | 저자 결정: LLM 전달 수("토큰 제한" 조건 근거) | 원 출처 확인 |
+| 1a | 200-char chunks | "One context" and a fixed character count are different criteria; mid-sentence cuts are possible. | keep (sentence-boundary alignment offered as an option) | Retrieval accuracy with vs. without sentence alignment |
+| 1b | 200-char chunks | Tables, code, and lists do not fit a meaning unit in 200 chars. | conditional (apply to prose documents) | Confirm document type |
+| 1c | 60-char overlap | 30% duplication raises index and embedding cost; no basis given. | keep | Boundary-question accuracy at overlap 0 / 30 / 60 |
+| 1d | Unit of "characters" | Characters vs. tokens undefined. | author decision: characters | Confirm with the source |
+| 2a | Keyword search prevents false positives | With whitespace tokenization, Korean particles make "성수점은" ≠ "성수점". | conditional (needs morphological analysis or n-grams) | Check the search engine's tokenizer |
+| 2b | Merge both result sets | Fusion method (RRF / weighted sum / filter) undefined; bad weights let one side dominate. | keep (require recording the method) | Evaluate fusion methods |
+| 2c | Preventing branch confusion | A metadata filter on branch name is more reliable. | proposal (outside the source rule) | Whether metadata exists |
+| 3a | Top-20 | 4× context; lost-in-the-middle risk (Liu et al., 2023). | keep (when k exceeds the budget, apply the author decision in SKILL.md Rule 3 Execution) | LLM context limit, positional utilization |
+| 3b | Enough documents for aggregate questions | Retrieval cannot guarantee completeness; raising k never proves "all". | keep + range-limiting phrase mandatory (author decision); structured query is a proposal | Whether structured data exists |
+| 4a | Skip reranker at Top-20 | Common practice is the reverse: retrieve wide → rerank → pass few. More candidates raise the reranker's value. The source does not separate retrieved count from LLM-fed count. | **conflict** | Answer quality with vs. without reranker at the same k |
+| 4b | Reranker required at Top-5 or fewer | Agreed. But with only 5 candidates the reranker has little to reorder — the first pass must be wider. | keep (recommend ≥ 20 first-pass candidates) | — |
+| 4c | 6–19 range | Undefined by the source. | author proposal: reranker on by default, flagged for user confirmation | User decision |
+| 4d | Meaning of "secured/extracted" count | First-pass candidates or LLM-fed count undefined. Read as first-pass, the 4b configuration (20 candidates, 5 passed) triggers "skip" and "required" at once. | author decision: LLM-fed count (basis: the "token limit" condition) | Confirm with the source |
 
-## 상충 4a에 대한 처리 원칙
+## Handling of conflict 4a
 
-원 규칙을 기본값으로 둔다. 근거: 스킬의 출처는 그 규칙이고, 저자 관점은 일반론이지 이 지식 베이스에서 검증된 것이 아니다. 단 설계 결과물에는 반드시 (1) 어느 쪽을 택했는지, (2) 왜인지, (3) 반대 관점이 존재함을 적는다. 사용자가 답변 품질 저하(무관한 조각으로 인한 오답)를 보고하면 그것이 4a 재검토의 트리거다.
+Keep the source rule as the default. Reason: the skill's provenance is that rule, and the author's view is general practice, not something validated on this knowledge base. The design output must state (1) which side was chosen, (2) why, and (3) that the opposing view exists. A user report of degraded answers (wrong answers caused by irrelevant chunks) is the trigger to revisit 4a.
+
+## Measured results (2026-09-21, public-document experiment)
+
+The harness in the repository's `eval/` directory ran a real retrieval pipeline to measure the open items above. CI (`.github/workflows/eval.yml`) reproduces the experiment. The results are evidence **for this corpus and these models only**, not general laws.
+
+- Corpus: 11 documents from ko.wikipedia.org (10 prose, 1 table), fetched live with pinned revision ids (oldid) and sha256 verification. CC BY-SA 4.0.
+- Questions: 66. Prose 54 (27 keyword-style, 27 paraphrase-style; drafted by an LLM, evidence sentences verified verbatim against the text). Table 12 (8 aggregate, 4 lookup; hand-written).
+- Pipeline: the skill's `chunk.py` → BM25 (whitespace vs. character-bigram tokens) + vector search (`intfloat/multilingual-e5-small`, cosine) → RRF → reranker (`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`).
+- Metrics: recall@k = an evidence chunk is in the top k; MRR = reciprocal rank of the first evidence chunk; coverage@k = fraction of an aggregate question's evidence rows found in the top k. LLM answer quality was not measured.
+
+| Item | Measurement | Effect on verdict |
+|---|---|---|
+| 1c 60-char overlap | 200/60: recall@20 0.94, MRR 0.81 vs. 200/0: 0.85, 0.71 | Overlap clearly helps; the source rule now has a basis |
+| 1a/1c 200-char size | 400/100: recall@5 0.93, MRR 0.85 > 200/60: 0.89, 0.81; 100/30: 0.81, 0.67 | 200 is not optimal here (400 did better). Treat 200 as a starting point, not a ceiling |
+| 2a tokenizer | Keyword-only, paraphrased questions, recall@20: whitespace 0.41 vs. bigram 0.85 | Keyword search without morphological analysis or n-grams fails on paraphrases; the conditional verdict is confirmed |
+| 2b hybrid effect | recall@20: vector 0.96, hybrid 0.94, keyword (bigram) 0.93; MRR: hybrid 0.81 > vector 0.76 > keyword 0.75 | Hybrid improved ranking (MRR) but not recall@20 over vector alone. "Always combine" is supported as a ranking improvement only |
+| 3b aggregate questions | 2–7 evidence rows per question, yet coverage@20 0.59–0.70, coverage@50 0.86–0.93; the top 5 were prose chunks on the same topic, not table rows | Top-20 is incomplete even for small aggregates. The mandatory range-limiting phrase is confirmed; the structured-query proposal is strengthened |
+| 1b table document | One row per chunk: coverage@20 0.59 vs. fixed 200/60: 0.70 (coverage@50: 0.93 vs. 0.86) | Row chunking was not better at k = 20. Table rows lack the topic word "national park" and lose to prose chunks. The row-chunking proposal stays unverified |
+| 4b reranker with few chunks | Final 5: hybrid top-5 0.85 → top-20 → rerank → 5: 0.89 → top-50 → rerank → 5: 0.94 | Source rule supported; a wider first pass helps more |
+| 4a reranker with 20 chunks | top-20 as-is MRR 0.81 → after rerank 0.87 (recall@20 unchanged at 0.94); top-50 → rerank → 20: recall@20 1.00 | Even when all 20 are passed, the reranker improves ordering, and widening to 50 candidates removes misses. "Skip at Top-20" is not supported on this corpus. The conflict stands, but the evidence favours the author's view |
+
+Limits: 11 documents, 66 questions, one small model of each kind. Rankings may change in other domains or with other models. No statistical significance testing. Re-run: `cd eval && python3 fetch.py && python3 run_eval.py`.

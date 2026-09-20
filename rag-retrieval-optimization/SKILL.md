@@ -3,122 +3,123 @@ name: rag-retrieval-optimization
 description: Design, configure, or review the retrieval side of a RAG (검색 증강 생성) knowledge-base pipeline — chunking with overlap (script included), hybrid (vector + keyword) search, Top-k sizing, and conditional reranker use — and report answers over retrieved chunks with source tags. Use when asked to set up or tune 지식 베이스 검색, 청킹, 하이브리드 검색, Top-k, 리랭커, or to review a RAG retrieval setup. Rules carry an adversarial-review record; apply the source defaults and surface the known tradeoffs rather than silently overriding them.
 ---
 
-# RAG 지식 베이스 검색 최적화
+# RAG Knowledge-Base Retrieval Optimization
 
-지식 베이스에서 사용자 질문에 맞는 문서를 정확히 찾아내기 위한 문서 처리·검색 규칙이다. 파이프라인을 **설계/구성/구현**할 때, 기존 구성을 **리뷰**할 때, 혹은 이 규칙이 적용된 검색 결과로 **답변**할 때 사용한다.
+Document-processing and retrieval rules for finding the documents that actually answer a user's question in a knowledge base. Use it when **designing, configuring, or implementing** a pipeline, when **reviewing** an existing configuration, or when **answering** from retrieval results produced under these rules.
 
-규칙 1~4는 저작 요청에 제공된 시스템 프롬프트를 정리한 것이다(수치·조건은 그대로, 문장은 다듬음). 그 설명은 스스로 "영상에서는"이라고 언급하지만 영상의 제목·제작자·게시일은 제공되지 않았다. 각 규칙 아래 **적대적 리뷰**는 스킬 저자의 추론이며 원 출처의 검증된 주장이 아니다. 두 가지를 섞지 말 것: 기본값은 원 규칙을 따르고, 리뷰 항목은 사용자/운영자에게 드러내 결정을 받는다. 전체 리뷰 기록은 [references/adversarial-review.md](references/adversarial-review.md).
+Rules 1–4 restate the system prompt supplied in the authoring request (numbers and conditions unchanged, sentences tidied). That prompt refers to "the video" but the video's title, creator, and publication date were not provided. Under each rule, the **Adversarial review** block is the skill author's inference, not a verified claim of the source. Do not blend the two: the source rule is the default; review items are surfaced to the user/operator for a decision. Full review record and measured evidence: [references/adversarial-review.md](references/adversarial-review.md).
 
-## 용어
+## Terms
 
-아래 정의는 저작 요청에 제공된 문장 그대로다.
+The definitions below are translations of the Korean wording supplied in the authoring request; the Korean term is kept in parentheses.
 
-- **벡터 검색 (Vector Search)**: 단어가 정확히 일치하지 않아도 문맥과 의미를 기반으로 필요한 정보를 찾아내는 검색 방식입니다.
-- **임베딩 (Embedding)**: 문장의 의미를 수치화하여 가상의 공간에 배치하는 기술로, 영상에서는 이를 '뜻의 지도'라고 표현합니다.
-- **청킹 및 겹쳐 자르기 (Chunking & Overlap)**: 긴 문서를 처리하기 좋은 크기로 분할(청킹)하되, 잘리는 부분의 문맥이 훼손되지 않도록 앞 조각의 일부를 다음 조각에 중복해서 포함하는 기법입니다.
-- **Top-k (검색 결과 수)**: 질문에 답하기 위해 AI가 참조하는 후보 문서의 개수입니다. 영상에서는 이 수를 5개에서 20개로 늘리는 것의 중요성을 강조합니다.
-- **리랭커 (Reranker)**: 1차로 검색된 후보 문서들을 사용자의 질문과 다시 꼼꼼히 대조하여, 가장 연관성 높은 문서들로 순위를 재조정하는 모델입니다.
-- **하이브리드 검색 (Hybrid Search)**: 의미 중심의 '벡터 검색'과 정확한 단어 일치 중심의 '키워드 검색'을 혼합하여 두 방식의 단점을 상호 보완하는 검색 기법입니다.
+- **Vector Search (벡터 검색)**: A retrieval method that finds the needed information from context and meaning even when the words do not match exactly.
+- **Embedding (임베딩)**: A technique that turns the meaning of a sentence into numbers and places it in a virtual space; the video calls this a "map of meaning".
+- **Chunking & Overlap (청킹 및 겹쳐 자르기)**: Splitting a long document into pieces of a size that is easy to process (chunking), while repeating part of the previous piece at the start of the next so context at the cut is not lost.
+- **Top-k (검색 결과 수)**: The number of candidate documents the AI consults to answer a question. The video stresses the importance of raising this from 5 to 20.
+- **Reranker (리랭커)**: A model that re-compares the first-pass candidate documents against the user's question in detail and reorders them so the most relevant documents rank first.
+- **Hybrid Search (하이브리드 검색)**: Combining meaning-centred "vector search" with exact-word-match "keyword search" so that each method covers the other's weaknesses.
 
-## 시작 전에 확인할 입력
+## Inputs to confirm before starting
 
-다음이 없으면 규칙을 그대로 적용하되, 결과에 "가정"으로 명시한다.
+If any of these is missing, apply the rules as written and mark the gap as an "assumption" in the output.
 
-- 문서 종류·언어·위치 (한국어 산문인지, 표·코드·목록이 섞였는지, 파일/DB 어디에 있는지)
-- 검색 스택: 임베딩 모델, 벡터 저장소, 키워드 검색 엔진과 그 한국어 토크나이저 유무 (형태소 분석 없이 공백 분리만 하는지)
-- 답변 LLM의 컨텍스트 예산 (Top-20 조각을 다 넣을 수 있는지)
-- 리랭커 모델 사용 가능 여부와 지연시간·비용 제약
-- 예상 질문 유형에 '집계형 질문'(건수·통계를 묻는 질문)이 포함되는지. 자동 감지가 필요하면 "몇 개", "총", "전부", "모든", "목록" 같은 어휘로 판별한다 — 저자 제안, 원 규칙에 감지 방법은 없다.
+- Document type, language, and location (Korean prose? tables, code, or lists mixed in? files or a DB?)
+- Retrieval stack: embedding model, vector store, keyword engine and whether it has a Korean tokenizer (morphological analysis vs. whitespace-only)
+- Context budget of the answering LLM (can it take all Top-20 chunks?)
+- Reranker availability, latency, and cost limits
+- Whether expected questions include **aggregate questions** (counts, statistics). If automatic detection is needed, key on words such as "how many", "total", "all", "every", "list" (Korean: "몇 개", "총", "전부", "모든", "목록") — author proposal; the source defines no detection method.
 
-`scripts/chunk.py` 경로는 이 스킬 디렉터리 기준이다. 다른 작업 디렉터리에서 실행할 때는 절대 경로로 호출한다.
+`scripts/chunk.py` is addressed relative to this skill directory. Call it by absolute path from any other working directory.
 
-## 규칙 1. 문서 분할 (Chunking with Overlap)
+## Rule 1. Chunking with Overlap
 
-**원 규칙**
-- 문서는 기본적으로 한 가지 맥락이 담기는 **200자** 단위로 분할한다.
-- 잘리는 부분의 문맥 훼손을 막기 위해 **앞 조각의 마지막 60자를 다음 조각의 맨 앞에 중복 포함**(Overlapping)한다.
+**Source rule**
+- Split documents into **200-character** units, each holding one context.
+- To avoid breaking context at the cut, **repeat the last 60 characters of the previous chunk at the start of the next** (overlapping).
 
-**실행**
-- 손으로 자르지 말고 `scripts/chunk.py`를 쓴다: `python3 scripts/chunk.py --size 200 --overlap 60 input.txt` (JSON Lines 출력, 각 조각에 `index`, `start`, `end`, `text`). 마지막 조각은 200자 미만일 수 있다.
-- 조각 개수와 `start`/`end` 오프셋을 기록해 검색 결과에서 원문 위치를 되짚을 수 있게 한다.
+**Execution**
+- Do not cut by hand; run `scripts/chunk.py`: `python3 scripts/chunk.py --size 200 --overlap 60 input.txt` (JSON Lines, each chunk with `index`, `start`, `end`, `text`). The last chunk may be shorter than 200.
+- Record the chunk count and the `start`/`end` offsets so retrieval hits can be traced back to the source text.
 
-**적대적 리뷰 (저자 추론)**
-- "한 가지 맥락"과 "200자"는 서로 다른 기준이다. 스크립트는 글자 수만 지키므로 문장 중간이 잘릴 수 있다. 문장 경계 정렬은 원 규칙에 없다 → 적용 여부를 사용자에게 확인.
-- 200자는 한국어 기준 1~3문장 수준이다. 표·코드·긴 목록은 200자 안에 의미 단위가 안 들어가므로 원 규칙은 **산문 문서에만** 그대로 적용한다. 문서가 주로 표·코드면 200/60을 자동 적용하지 말고, 행·섹션 단위 분할(저자 제안)과 원 규칙 중 무엇을 쓸지 사용자에게 확인한다.
-- 60/200 = 30% 중복은 색인 크기와 임베딩 비용을 그만큼 늘린다. 원 출처는 이 값의 근거를 제시하지 않았다.
-- "자"가 문자 수인지 토큰 수인지 원문에 정의가 없다. 이 스킬은 **문자 수**(Python `len`)로 해석한다 — 저자 결정.
+**Adversarial review (author inference)**
+- "One context" and "200 characters" are different criteria. The script enforces only the character count, so sentences can be cut mid-way. Sentence-boundary alignment is not in the source rule → ask the user whether to apply it.
+- 200 characters is roughly 1–3 Korean sentences. Tables, code, and long lists do not fit a meaning unit in 200 characters, so the source rule is applied as-is **only to prose**. If the document set is mostly tables or code, do not auto-apply 200/60; ask the user to choose between row/section-based splitting (author proposal) and the source rule.
+- 60/200 = 30% overlap grows the index and embedding cost by that much. The source gives no basis for the value.
+- The source does not say whether "characters" means characters or tokens. This skill reads it as **characters** (Python `len`) — author decision.
 
-## 규칙 2. 하이브리드 검색 (Hybrid Search)
+## Rule 2. Hybrid Search
 
-**원 규칙**
-- 단일 검색 방식에 의존하지 말고 반드시 두 방식을 혼합한다.
-  - **벡터 검색**: 단어가 다르더라도 코사인 유사도로 문맥·의미가 가까운 문서를 탐색한다.
-  - **키워드 검색**: 고유명사나 특정 단어가 정확히 일치하는 문서를 탐색하여 벡터 검색의 오탐(예: 성수점 ↔ 판교점 혼동)을 방지한다.
-- 두 검색 결과를 종합하여 최종 문서 순위를 산출한다.
+**Source rule**
+- Never rely on a single retrieval method; always combine both.
+  - **Vector search**: use cosine similarity to find documents close in context and meaning even when the words differ.
+  - **Keyword search**: find documents where proper nouns or specific words match exactly, to prevent vector-search false positives (e.g. confusing the Seongsu branch with the Pangyo branch).
+- Merge both result sets to produce the final document ranking.
 
-**실행**
-- 두 검색을 모두 돌리고, 결합 방식(예: RRF, 가중합)을 **명시적으로 기록**한다. 원 규칙은 결합 방식을 정하지 않았으므로 선택은 저자/실행자 결정으로 표시한다.
-- 각 후보 조각에 어느 검색(벡터/키워드/양쪽)에서 나왔는지 태그를 남긴다. 답변 출처 표시와 결합 방식 점검에 쓴다.
-- 질문에 고유명사(지점명, 제품명, 인명, 코드)가 있으면 그 단어가 키워드 검색 쿼리에 그대로 들어갔는지 확인한다.
+**Execution**
+- Run both searches and **record the fusion method explicitly** (e.g. RRF, weighted sum). The source does not fix a fusion method, so mark the choice as an author/executor decision.
+- Tag every candidate chunk with which retriever returned it (vector / keyword / both). Used for answer provenance and for checking the fusion.
+- If the question contains a proper noun (branch, product, person, code), confirm that exact string went into the keyword query unchanged.
 
-**적대적 리뷰 (저자 추론)**
-- 한국어에서 공백 기반 키워드 검색은 조사 때문에 "성수점은"과 "성수점"을 다른 토큰으로 볼 수 있다. 형태소 분석기 또는 n-gram 없이 키워드 검색이 오탐 방지 역할을 한다는 보장이 없다.
-- 키워드 검색은 오타·동의어에 취약하다. 하이브리드가 "두 단점을 상호 보완"한다는 것은 결합 가중치가 적절할 때만 성립한다.
-- 성수점/판교점 사례는 지점명이 **메타데이터 필터**로 처리될 수 있는 경우가 많다. 필터가 가능하면 키워드 검색보다 확실하지만 원 규칙에는 없다 → 제안으로만 제시.
+**Adversarial review (author inference)**
+- With whitespace tokenization, Korean particles make "성수점은" and "성수점" different tokens. Without a morphological analyzer or n-grams there is no guarantee keyword search performs the false-positive-prevention role.
+- Keyword search is fragile to typos and synonyms. "Each covers the other's weaknesses" holds only when the fusion weights are reasonable.
+- The Seongsu/Pangyo case is often better handled by a **metadata filter** on branch. When available it is more reliable than keyword search, but it is not in the source rule → offered as a proposal only.
 
-## 규칙 3. 검색 결과 수 확장 (Top-k Optimization)
+## Rule 3. Top-k Optimization
 
-**원 규칙**
-- 후보군 기본값을 **Top-5에서 Top-20으로** 확장하여 넉넉하게 추출한다.
-- 통계나 건수를 묻는 **집계형 질문**에는 필요한 문서가 누락되지 않도록 충분한 수의 문서를 확보한다.
+**Source rule**
+- Widen the default candidate pool **from Top-5 to Top-20** so extraction is generous.
+- For **aggregate questions** (statistics, counts), secure enough documents that none of the required ones is missed.
 
-**실행**
-- 기본 k = 20 (1차 후보 수). 집계형 질문이면 k를 올려 필요한 문서가 누락되지 않을 만큼 확보한다(원 규칙 필수). 원 규칙은 수치를 정하지 않았다 — 저자 제안: 예상 관련 문서 수(예: 대상 항목 수 × 항목당 조각 수) 이상으로 잡고, 그 값과 근거를 기록한다.
-- k가 LLM 컨텍스트 예산을 넘으면: k만큼 검색하되 LLM에는 예산만큼만 넘기고, 최종 수가 규칙 4 기준에 걸리면 리랭커로 고른다. 집계형 답변에는 "검색된 범위 내 집계"를 반드시 붙인다 — 저자 결정, 원 규칙에 이 경우의 처리는 없다.
-- 답변에 "검색된 조각 N개 중 M개 사용"을 기록한다.
+**Execution**
+- Default k = 20 (first-pass candidate count). For aggregate questions raise k until the required documents are covered (source rule, mandatory). The source gives no number — author proposal: at least the expected number of relevant documents (e.g. number of target items × chunks per item); record the value and its basis.
+- If k exceeds the LLM context budget: retrieve k, pass only the budget to the LLM, and if the final count falls under the Rule 4 threshold select with the reranker. Aggregate answers must carry the phrase "aggregated over the retrieved range" — author decision; the source does not cover this case.
+- Record "N chunks retrieved, M used" in the answer.
 
-**적대적 리뷰 (저자 추론)**
-- Top-20은 컨텍스트 길이와 비용을 4배로 늘린다. 긴 컨텍스트에서 중간 위치 정보가 무시되는 현상이 보고되어 있으므로(Liu et al., 2023, "Lost in the Middle") k 확대가 곧 정확도 향상은 아니다.
-- 집계형 질문은 검색 기반으로는 **완전성을 보장할 수 없다**. k를 얼마로 잡아도 "모든 문서"를 가져왔는지 알 수 없다. 따라서 검색으로 집계할 때 "검색된 범위 내 집계" 문구는 필수다. 저자 제안(원 규칙 외, 채택 시 규칙 이탈로 표시): 구조화 조회(DB/메타데이터 집계)가 가능하면 그것을 우선 검토한다.
+**Adversarial review (author inference)**
+- Top-20 quadruples context length and cost. Information in the middle of long contexts is reported to be under-used (Liu et al., 2023, "Lost in the Middle"), so a larger k is not automatically more accurate.
+- Aggregate questions **cannot be made complete by retrieval**: no value of k proves that "all" documents were fetched. Therefore the "aggregated over the retrieved range" phrase is mandatory when aggregating via retrieval. Author proposal (outside the source rule; mark as a deviation if adopted): prefer a structured query (DB/metadata aggregation) when one is available.
 
-## 규칙 4. 리랭커의 조건부 사용
+## Rule 4. Conditional Reranker
 
-**원 규칙**
-- **Top-20 이상**의 충분한 문서를 확보한 상태라면 리랭커 파이프라인을 **생략**한다.
-- **토큰 제한 등의 이유로 소수의 문서(Top-5 이하)** 만 추출해야 하는 환경에서는 **반드시 리랭커를 가동**하여 질문과 문서를 대조해 순위를 재조정한다.
+**Source rule**
+- When **Top-20 or more** documents have been secured, **skip** the reranker pipeline.
+- In environments where **only a few documents (Top-5 or fewer)** can be extracted, e.g. because of token limits, **always run the reranker** to compare question and documents and re-rank.
 
-원 규칙의 "확보/추출" 수가 1차 검색 후보 수인지 LLM에 넘기는 수인지는 원문에 정의가 없다(규칙 3의 "추출"과 같은 단어). 이 스킬은 **LLM에 넘기는 최종 조각 수**로 해석한다 — 저자 결정. 근거: 규칙 4의 조건이 "토큰 제한"이고, 이는 LLM 입력에 걸리는 제약이다. 이 해석이 틀리면 아래 판정 기준도 달라진다.
+The source does not define whether the "secured/extracted" count is the first-pass candidate count or the number passed to the LLM (it uses the same word as Rule 3). This skill reads it as the **final number of chunks passed to the LLM** — author decision. Basis: the condition is "token limits", which constrain LLM input. If this reading is wrong, the thresholds below change.
 
-**실행**
-- 최종 조각 수 5 이하 → 리랭커 필수. 20 이상 → 원 규칙상 생략. 6~19 → 원 규칙이 정하지 않은 구간. 기본값은 리랭커 사용(저자 제안)이며, 결과물에 이 구간임을 표시하고 사용자 확인 대상으로 올린다.
-- 리랭커를 켤 때 1차 후보는 최종 수보다 넉넉히(권장 20 이상, 저자 제안) 뽑는다. 후보가 5개뿐이면 재정렬할 것이 없다.
-- 리랭커를 켰다면 "1차 후보 수 → 리랭커 후 최종 수"를 기록한다.
+**Execution**
+- Final chunk count ≤ 5 → reranker required. ≥ 20 → skipped per the source rule. 6–19 → undefined by the source; default to using the reranker (author proposal), flag the range in the output, and raise it for user confirmation.
+- When the reranker is on, retrieve a first-pass pool larger than the final count (recommended ≥ 20, author proposal). With only 5 candidates there is nothing to reorder.
+- Record "first-pass candidates → after reranker" whenever the reranker runs.
 
-**적대적 리뷰 (저자 추론) — 원 규칙과 상충하는 관점**
-- 일반적인 실무 구성은 원 규칙과 반대다: **넓게 검색(예: 50~100) → 리랭커로 압축 → 상위 소수를 LLM에 전달**. 즉 후보가 많을수록 리랭커 가치가 커진다. 원 규칙은 "검색 후보 수"와 "LLM에 넣는 수"를 구분하지 않은 것으로 보인다.
-- 따라서 "Top-20을 LLM에 다 넣으니 리랭커 불필요"는 리랭커를 **정밀도 도구**가 아니라 **누락 방지 대안**으로만 본 해석이다. 노이즈 조각이 답변 품질을 떨어뜨리는 경우 이 해석은 틀릴 수 있다.
-- 이 상충은 해소되지 않았다. 스킬은 원 규칙을 기본값으로 두되, 파이프라인 설계 결과물에 이 상충과 선택 근거를 반드시 적는다.
+**Adversarial review (author inference) — conflicts with the source rule**
+- Common practice is the reverse of the source rule: **retrieve wide (e.g. 50–100) → compress with the reranker → pass a few to the LLM**. The more candidates, the more the reranker is worth. The source appears not to distinguish "retrieved candidates" from "chunks given to the LLM".
+- "All 20 go to the LLM, so no reranker" treats the reranker as a **recall fallback** rather than a **precision tool**. Where noisy chunks degrade answers this reading can be wrong.
+- The conflict is unresolved. Keep the source rule as the default, but the design output must state the conflict and the reason for the choice. In the public-document experiment (reference file, "Measured results"), the reranker raised MRR from 0.81 to 0.87 even when 20 chunks were passed, and 50 candidates → reranker → 20 reached recall@20 = 1.00 — the evidence favours the author's view, but it is one corpus. Show the user these numbers and let them decide.
 
-## 결과물과 완료 기준
+## Deliverables and completion criteria
 
-파이프라인 설계/구성 작업의 결과에는 다음이 모두 있어야 한다.
+A pipeline design/configuration result must contain all of:
 
-1. 청킹 파라미터(크기, 겹침, 단위=문자)와 산출 조각 수
-2. 벡터 검색 + 키워드 검색 각각의 설정과 결합 방식
-3. 1차 후보 k, 최종 LLM 전달 수, 집계형 질문 처리 방식
-4. 리랭커 사용 여부와 규칙 4 기준 판정 근거
-5. 위 각 항목에서 원 규칙을 벗어난 부분과 그 이유, 그리고 적대적 리뷰 항목 중 사용자 결정이 필요한 것
+1. Chunking parameters (size, overlap, unit = characters) and resulting chunk count
+2. Vector search and keyword search settings, and the fusion method
+3. First-pass k, final count passed to the LLM, and the handling of aggregate questions
+4. Whether the reranker is used and the Rule 4 basis for that decision
+5. Every departure from a source rule with its reason, and the adversarial-review items that need a user decision
 
-질문 답변 작업이라면: 사용된 조각의 출처(문서, `start`/`end`), 하이브리드 검색 양쪽에서 나온 조각인지 여부, 집계형이면 범위 한정 문구.
+For a question-answering task: the source of each chunk used (document, `start`/`end`), whether it came from both retrievers, and, for aggregates, the range-limiting phrase.
 
-## 하지 말 것
+## Do not
 
-- 리뷰 항목을 근거로 원 규칙을 말없이 바꾸지 말 것. 바꾸면 결과물에 표시한다.
-- 검색되지 않은 내용을 답변에 넣지 말 것. 조각에 없으면 "검색 범위에 없음"으로 답한다.
-- 원 출처(영상)를 확인하지 않은 상태에서 그 내용을 사실로 인용하지 말 것. 이 스킬의 규칙 출처는 "저작 요청에 제공된 설명"까지다.
+- Change a source rule silently on the strength of a review item. If you change it, say so in the output.
+- Put anything in an answer that was not retrieved. If it is not in the chunks, answer "not in the retrieved range".
+- Quote the original source (the video) as fact without having checked it. This skill's provenance stops at "the explanation supplied in the authoring request".
 
-## 출처와 신뢰도
+## Provenance and confidence
 
-- 규칙 1~4, 용어 정의: 저작 요청에 제공된 시스템 프롬프트와 용어 설명(스킬 저작일 2026-09-21). 설명은 어떤 영상의 내용을 언급하나 영상의 제목·제작자·게시일은 제공되지 않았다. 규칙의 유효 시점·검증 근거는 알 수 없다.
-- 스킬 저자의 추론·제안(원 출처의 승인 없음): 적대적 리뷰 전부, 규칙 4의 "최종 조각 수" 해석, 6~19 구간 기본값, 1차 후보 ≥ 20 권장, "자" = 문자 수 해석, 결합 방식·검색 출처 태그 기록 요구, 집계형 질문 감지 어휘와 k 산정 방식, 구조화 조회 우선 제안.
-- 미해결: 200/60의 근거, 결합 방식, 한국어 토크나이저 요구사항, 규칙 4의 상충. 해소하려면 실제 지식 베이스에서 설정별 검색 정확도 비교 실험이 필요하다.
+- Rules 1–4 and term definitions: the system prompt and glossary supplied in the authoring request (skill authored 2026-09-21). The explanation refers to a video whose title, creator, and date were not provided. The rules' effective date and validation basis are unknown.
+- Skill author's inferences and proposals (not approved by the source): every adversarial-review item, the "final chunk count" reading of Rule 4, the 6–19 default, the ≥ 20 first-pass recommendation, the "characters" reading, the fusion-method and retriever-tag recording requirements, the aggregate-detection words and k sizing, and the structured-query proposal.
+- Measured (reference file, "Measured results"; ko.wikipedia, 11 documents, 66 questions, small models): 60-char overlap helps (recall@20 0.85 → 0.94); 400 chars beat 200; whitespace tokenization fails on paraphrased questions (0.41 vs 0.85 with bigrams); hybrid improves ranking more than recall; Top-20 is insufficient even for small aggregates (coverage@20 ≤ 0.70); the reranker helps at both 5 and 20 final chunks. Evidence is limited to that corpus.
+- Still unresolved: the source's basis for the specific 200/60 values, fusion-method choice, row-based chunking for tables (no k=20 gain in the experiment), and generalization to other domains and models.
