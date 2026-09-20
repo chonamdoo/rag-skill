@@ -20,9 +20,8 @@ jobs:
 
       - name: Install deps (CPU torch)
         run: |
-          uv venv .venv
           uv pip install -r eval/requirements.txt
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          echo "$VIRTUAL_ENV/bin" >> "$GITHUB_PATH"
 
       - name: Cache HF models
         uses: actions/cache@v4
