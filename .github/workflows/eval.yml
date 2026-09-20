@@ -1,0 +1,56 @@
+name: retrieval-eval
+
+on:
+  push:
+    branches: [main]
+    paths: ["rag-retrieval-optimization/**", "eval/**", ".github/workflows/eval.yml"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps (CPU torch)
+        run: uv pip install --system -r eval/requirements.txt
+
+      - name: Cache HF models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ hashFiles('eval/run_eval.py') }}
+
+      - name: Skill script self-check
+        run: |
+          printf '%s' "$(python -c "print('가나다라마바사아자차'*50)")" > /tmp/kb.txt
+          python rag-retrieval-optimization/scripts/chunk.py /tmp/kb.txt | python -c "
+          import sys,json
+          cs=[json.loads(l) for l in sys.stdin]
+          assert len(cs)==4 and all(a['text'][-60:]==b['text'][:60] for a,b in zip(cs,cs[1:])), cs
+          print('chunk.py overlap invariant ok')"
+
+      - name: Fetch corpus from ko.wikipedia.org (pinned revisions, hash-verified)
+        run: python eval/fetch.py
+
+      - name: Run retrieval evaluation
+        run: python eval/run_eval.py --report eval/report.md --json eval/results.json
+
+      - name: Publish report to job summary
+        if: always()
+        run: cat eval/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: |
+            eval/report.md
+            eval/results.json
+            eval/data/corpus.json

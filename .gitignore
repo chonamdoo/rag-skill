@@ -1,0 +1,5 @@
+eval/.venv/
+eval/data/corpus.json
+eval/report.md
+eval/results.json
+__pycache__/
