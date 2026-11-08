@@ -3,3 +3,4 @@ eval/data/corpus.json
 eval/report.md
 eval/results.json
 __pycache__/
+skill-eval-results.json

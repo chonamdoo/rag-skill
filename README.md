@@ -76,3 +76,15 @@ Limits: one corpus, one small model per role, no significance testing. Full tabl
 ## Provenance
 
 Rules and glossary: a system prompt supplied at authoring time that summarizes an unidentified video. Everything labelled "author" in the skill is inference by the skill's author, not a claim of the source. Corpus text is from ko.wikipedia.org under CC BY-SA 4.0.
+
+## Skill eval on every change
+
+Run this locally before merging any change to the skill or its eval cases (it is not wired to GitHub Actions):
+
+```bash
+python3 evals/skill-eval/skill_eval.py evals/skill-eval/suite.json --base-ref origin/main
+```
+
+`skill_eval.py` gives each case in `evals/skill-eval/suite.json` to `claude -p` twice, once with the working-tree skill and once with the skill at `--base-ref`, each without tools. A separate judge call marks every required criterion. The run exits 1 when the working-tree required pass rate drops more than `max_drop` below base, or falls below `min_pass_rate`. Results go to `skill-eval-results.json`. Spend is capped by `max_usd`. `--dry-run` prints the call count; `--select ID,ID` and `--reps N` narrow the run. Requires a logged-in `claude` CLI.
+
+Limits: one fixed case set, an LLM judge, and few repetitions. It catches regressions against the previous version, not held-out improvement.

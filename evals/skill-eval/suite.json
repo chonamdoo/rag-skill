@@ -1,0 +1,58 @@
+{
+ "name": "rag-retrieval-optimization",
+ "skill_dir": "rag-retrieval-optimization",
+ "cases": [
+  {
+   "id": "R1-design",
+   "request": "사내 위키(한국어 산문 문서 약 3천 개, Markdown)로 RAG 검색을 새로 구성하려고 해. 임베딩은 multilingual-e5, 벡터 DB는 pgvector, 키워드 검색은 Postgres 기본 full-text(공백 토큰화)만 있어. 답변 LLM은 청크 20개까지 받을 수 있어. 검색 설정안을 짜 줘.",
+   "criteria": [
+    "Chunking uses 200-character chunks with 60-character overlap (characters, not tokens) or explicitly records any departure with a reason.",
+    "Combines vector and keyword search and states the fusion method as a choice (e.g. RRF), not as a source requirement.",
+    "Flags that whitespace-only Korean tokenization undermines keyword search (particles) and proposes a morphological analyzer or n-grams.",
+    "Sets first-pass k to 20 and says how aggregate (count/statistics) questions are handled, including that retrieval cannot prove completeness.",
+    "States whether the reranker is used with the Rule 4 basis (final count passed to the LLM) and surfaces the conflict with common practice (retrieve wide, rerank, pass few) for the user's decision."
+   ]
+  },
+  {
+   "id": "R2-aggregate-answer",
+   "request": "지식 베이스 검색 결과로 답해 줘. 질문: 서울에 있는 지점은 모두 몇 개야?\n검색 설정: Top-20 검색, LLM에 20개 전달.\n[청크1 doc=stores.md start=0 end=180 retriever=both] 성수점은 서울 성동구에 있다.\n[청크2 doc=stores.md start=120 end=300 retriever=keyword] 판교점은 경기 성남시에 있다.\n[청크3 doc=stores.md start=240 end=420 retriever=vector] 강남점은 서울 강남구에 있다.\n(나머지 17개 청크는 지점과 무관한 휴무 안내다.)",
+   "criteria": [
+    "Answers 2 (성수점, 강남점) only as a count over the retrieved range and says so explicitly (e.g. '검색된 범위 기준'), without claiming it is the complete total.",
+    "Cites the source of each used chunk (document and start/end offsets) and which retriever returned it.",
+    "Records how many chunks were retrieved and how many were used.",
+    "Does not add any store or fact that is not in the supplied chunks."
+   ]
+  },
+  {
+   "id": "R3-not-retrieved",
+   "request": "검색된 청크만 근거로 답해 줘. 질문: 판교점 영업시간은?\n[청크1 doc=stores.md start=120 end=300 retriever=keyword] 판교점은 경기 성남시에 있다.\n[청크2 doc=notice.md start=0 end=150 retriever=vector] 성수점은 오전 10시에 연다.",
+   "criteria": [
+    "Says the 판교점 opening hours are not in the retrieved range instead of guessing or borrowing 성수점's hours.",
+    "Does not state any opening time for 판교점."
+   ]
+  },
+  {
+   "id": "R4-tables",
+   "request": "우리 문서는 대부분 엑셀에서 뽑은 표(가격표, 재고표)야. 200자/60자 겹침 청킹 그대로 돌리면 돼? 바로 chunk.py 돌릴 명령만 줘.",
+   "criteria": [
+    "Does not silently apply 200/60 to table-dominant documents; explains that the source rule is applied as-is only to prose.",
+    "Asks the user to choose between row/section-based splitting and the source rule (or presents that choice) before chunking tables."
+   ]
+  },
+  {
+   "id": "R5-reranker-midrange",
+   "request": "토큰 한도 때문에 LLM에는 청크 10개만 넣을 수 있어. 1차 검색은 Top-20이야. 리랭커 써야 돼, 말아야 돼? 짧게 결정만.",
+   "criteria": [
+    "Recommends using the reranker for a final count of 10 and labels the 6–19 range as undefined by the source rule (author default).",
+    "Flags the range for user confirmation or records the decision basis rather than presenting it as a source rule."
+   ]
+  }
+ ],
+ "max_usd": 5,
+ "model": "sonnet",
+ "judge_model": "sonnet",
+ "reps": 2,
+ "jobs": 4,
+ "min_pass_rate": 0.0,
+ "max_drop": 0.1
+}
