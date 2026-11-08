@@ -46,14 +46,33 @@ class BudgetExceeded(RuntimeError):
 
 
 class Runner:
-    def __init__(self, max_usd, dry_run=False):
+    """Runs `claude -p` under a spending cap shared by all worker threads.
+
+    The cost of a call is known only after it returns, so each attempt (retries included) reserves the
+    largest cost seen so far before it starts. A new attempt starts only if spent + in-flight reservations
+    + its own reservation stay within max_usd."""
+
+    def __init__(self, max_usd, dry_run=False, initial_reserve=0.25):
         self.max_usd, self.spent, self.dry_run = max_usd, 0.0, dry_run
+        self.reserved, self.largest = 0.0, initial_reserve
         self.lock = threading.Lock()
 
-    def claude(self, prompt, system, model, schema=None):
+    def _reserve(self):
         with self.lock:
-            if self.spent >= self.max_usd:
-                raise BudgetExceeded(f"spent ${self.spent:.2f} >= max_usd ${self.max_usd:.2f}")
+            need = self.largest
+            if self.spent + self.reserved + need > self.max_usd:
+                raise BudgetExceeded(f"spent ${self.spent:.2f} + in flight ${self.reserved:.2f} + next "
+                                     f"${need:.2f} > max_usd ${self.max_usd:.2f}")
+            self.reserved += need
+            return need
+
+    def _settle(self, reserved, cost):
+        with self.lock:
+            self.reserved -= reserved
+            self.spent += cost
+            self.largest = max(self.largest, cost)
+
+    def claude(self, prompt, system, model, schema=None):
         if self.dry_run:
             return {"text": "", "structured": {"criteria": []}, "cost": 0.0}
         cmd = ["claude", "-p", "--model", model, "--tools", "", "--setting-sources", "",
@@ -62,27 +81,36 @@ class Runner:
             cmd += ["--json-schema", json.dumps(schema)]
         last = None
         for _ in range(3):
-            proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=900)
+            reserved = self._reserve()
+            cost = 0.0
             try:
-                data = json.loads(proc.stdout)
-            except json.JSONDecodeError:
-                last = f"exit {proc.returncode}: {(proc.stderr or proc.stdout)[-500:]}"
-                continue
-            with self.lock:
-                self.spent += float(data.get("total_cost_usd") or 0)
+                proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=900)
+                try:
+                    data = json.loads(proc.stdout)
+                except json.JSONDecodeError:
+                    last = f"exit {proc.returncode}: {(proc.stderr or proc.stdout)[-500:]}"
+                    continue
+                cost = float(data.get("total_cost_usd") or 0)
+            finally:
+                self._settle(reserved, cost)
             if data.get("is_error"):
                 last = str(data.get("result"))[-500:]
                 continue
-            return {"text": data.get("result") or "", "structured": data.get("structured_output"),
-                    "cost": float(data.get("total_cost_usd") or 0)}
+            return {"text": data.get("result") or "", "structured": data.get("structured_output"), "cost": cost}
         raise RuntimeError(f"claude call failed 3 times: {last}")
 
 
 def skill_files_at_ref(skill_dir, ref):
-    """{relative path: text} of the skill at a git ref, or None when absent there."""
+    """{relative path: text} of the skill at a git ref, or None when the ref exists but lacks the skill.
+
+    An unresolvable ref raises: silently dropping the base arm would turn a regression check into head-only."""
+    resolved = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+                              capture_output=True, text=True)
+    if resolved.returncode != 0:
+        raise ValueError(f"--base-ref {ref!r} does not resolve to a commit (run `git fetch`?)")
     listing = subprocess.run(["git", "ls-tree", "-r", "--name-only", ref, "--", skill_dir],
-                             capture_output=True, text=True)
-    if listing.returncode != 0 or not listing.stdout.strip():
+                             capture_output=True, text=True, check=True)
+    if not listing.stdout.strip():
         return None
     files = {}
     for path in listing.stdout.split():
